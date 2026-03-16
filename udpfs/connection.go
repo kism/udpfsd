@@ -1,0 +1,79 @@
+// UPDFS implementation
+// See docs/UDPFS.md for details
+package udpfs
+
+import (
+	"net"
+
+	"github.com/pcm720/udpfsd/udprdma"
+)
+
+// Connection wraps a UDPRDMA session and an FS, and provides UDPFS reply encoding, sending, and request dispatch.
+// Create with NewConnection; then call HandlePayload for each received UDPFS data payload.
+type Connection struct {
+	sess    *udprdma.Session
+	fs      FS
+	verbose bool
+}
+
+// NewConnection returns a Connection that sends via the given session and dispatches requests to fs.
+func NewConnection(sess *udprdma.Session, fs FS, verbose bool) *Connection {
+	return &Connection{sess: sess, fs: fs, verbose: verbose}
+}
+
+func (c *Connection) GetUDPRDMASession() *udprdma.Session {
+	return c.sess
+}
+
+// SendACK sends an ACK or NACK packet (no payload).
+func (c *Connection) SendACK(addr *net.UDPAddr, ack bool) {
+	c.sess.SendACK(ack)
+}
+
+// SendData sends a single DATA packet with full payload and FIN.
+func (c *Connection) SendData(addr *net.UDPAddr, payload []byte) {
+	c.sess.SendData(payload)
+}
+
+// SendOpenReply sends an OPEN_REPLY.
+func (c *Connection) SendOpenReply(addr *net.UDPAddr, handle int32, st StatInfo) {
+	c.sess.SendData(PackOpenReply(handle, st))
+}
+
+// SendReadResult sends a RESULT_REPLY header plus optional data (for READ).
+func (c *Connection) SendReadResult(addr *net.UDPAddr, result int32, data []byte) {
+	if data == nil {
+		data = []byte{}
+	}
+	c.sess.SendRawDataWithHeader(PackResultReply(result), data)
+}
+
+// SendWriteDone sends a WRITE_DONE.
+func (c *Connection) SendWriteDone(addr *net.UDPAddr, result int32) {
+	c.sess.SendData(PackWriteDone(result))
+}
+
+// SendLseekReply sends an LSEEK_REPLY.
+func (c *Connection) SendLseekReply(addr *net.UDPAddr, position int64) {
+	c.sess.SendData(PackLseekReply(position))
+}
+
+// SendDreadReply sends a DREAD_REPLY.
+func (c *Connection) SendDreadReply(addr *net.UDPAddr, result int32, name string, st StatInfo) {
+	c.sess.SendData(PackDreadReply(result, name, st))
+}
+
+// SendGetstatReply sends a GETSTAT_REPLY.
+func (c *Connection) SendGetstatReply(addr *net.UDPAddr, result int32, st StatInfo) {
+	c.sess.SendData(PackGetstatReply(result, st))
+}
+
+// SendCloseReply sends a CLOSE_REPLY.
+func (c *Connection) SendCloseReply(addr *net.UDPAddr, result int32) {
+	c.sess.SendData(PackCloseReply(result))
+}
+
+// SendResultReplyOnly sends an 8-byte RESULT_REPLY (mkdir/remove/rmdir).
+func (c *Connection) SendResultReplyOnly(addr *net.UDPAddr, result int32) {
+	c.sess.SendData(PackResultReply(result))
+}

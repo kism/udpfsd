@@ -1,0 +1,125 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - "*"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Avoid running again when we push the nightly tag
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    if: github.ref != 'refs/tags/nightly'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=nightly" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build all targets
+        run: make
+
+      - name: Copy README
+        run: cp README.md build/
+
+      - name: Create archives
+        run: |
+          cd build
+          VERSION="${{ steps.version.outputs.version }}"
+          for bin in udpfsd-linux-amd64 udpfsd-linux-arm64 udpfsd-linux-armv7 udpfsd-linux-armv6 \
+                      udpfsd-macos-amd64 udpfsd-macos-arm64 \
+                      udpfsd-windows-amd64.exe udpfsd-windows-arm64.exe; do
+            if [[ "$bin" == *.exe ]]; then
+              outname=udpfsd.exe
+            else
+              outname=udpfsd
+            fi
+            cp "$bin" "$outname"
+            zip -j "../${bin%.exe}-${VERSION}.zip" "$outname" README.md
+            rm -f "$outname"
+          done
+          cd ..
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: "*.zip"
+
+  release-tag:
+    name: Release (tagged)
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+
+      - name: Create release draft
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          files: "*.zip"
+
+  release-nightly:
+    name: Release (nightly)
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+
+      - name: Create or update nightly tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly ${{ github.sha }}
+          git push -f origin nightly
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly build
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          body: "Automated nightly build from main. Pre-built binaries do not include CHD support (CSO/ZSO only)."
+          files: "*.zip"

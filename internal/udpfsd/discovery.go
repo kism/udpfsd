@@ -9,6 +9,8 @@ import (
 )
 
 func (s *Server) discoveryHandler() {
+	defer s.wg.Done()
+
 	buf := make([]byte, 2048)
 	s.discConn.SetReadBuffer(2048)
 	for {
@@ -16,7 +18,6 @@ func (s *Server) discoveryHandler() {
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				log.Printf("udpfsd/discovery: connection has been closed")
-				s.wg.Done()
 				return
 			}
 			if s.verbose {

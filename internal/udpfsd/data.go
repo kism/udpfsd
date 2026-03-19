@@ -11,6 +11,8 @@ import (
 )
 
 func (s *Server) dataHandler() {
+	defer s.wg.Done()
+
 	s.dataConn.SetReadBuffer(2048)
 	buf := make([]byte, 2048)
 	for {
@@ -18,7 +20,6 @@ func (s *Server) dataHandler() {
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				log.Printf("udpfsd/data: connection has been closed")
-				s.wg.Done()
 				return
 			}
 			if s.verbose {
@@ -32,7 +33,7 @@ func (s *Server) dataHandler() {
 		}
 		pkt := make([]byte, n)
 		copy(pkt, buf[:n])
-		s.handleData(pkt, addr)
+		go s.handleData(pkt, addr)
 	}
 }
 

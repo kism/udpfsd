@@ -96,7 +96,6 @@ Environment variable names are the uppercase form of the flag name with hyphens 
 $ FSROOT=/mnt/files RO=1 udpfsd
 $ udpfsd -fsroot /mnt/files -ro
 
-
 # Serve with compression enabled and verbose logging
 $ FSROOT=/path/to/files COMPRESSION=1 VERBOSE=1 udpfsd
 $ udpfsd -fsroot /path/to/files -compression -verbose
@@ -115,21 +114,32 @@ $ udpfsd
 
 ## Compression Support
 
-When the `COMPRESSION` (or `-compression`) flag is enabled, the server transparently decompresses:
-
-- **CHD**
-- **CSO**
-- **ZSO**
+When the `COMPRESSION` (or `-compression`) flag is enabled, the server can serve **CHD**, **CSO**, and **ZSO** images as if they were raw disc images.  
+On-the-fly decompression is used **only** when the client opens the virtual name produced by directory listings (the real filename with `.iso` appended; see [Opening a file](#opening-a-file)).  
+If the client opens the file by its actual name on disk (e.g. `game.cso`), the server returns the compressed file bytes unchanged.
 
 The decompression cache stores recently accessed blocks per file using an LRU strategy.  
 The default cache size is 32 blocks, configurable via `COMPRESSION_CACHE_SIZE`.
+
+### Directory listings
+
+If a file is stored as a compressed image (for example `game.cso` or `disc.zso`), the name returned to the client has `.iso` appended (e.g. `game.cso.iso`).  
+The reported size is the uncompressed disc size, not the compressed file size on disk.
+
+### Opening a file
+
+When the client opens a path that ends in `.iso` and no file exists at that exact name, the server drops the trailing `.iso` and, if that path names a supported compressed image on disk, serves it **decompressed** (e.g. `game.cso.iso` → underlying `game.cso`).
+
+If the client opens the compressed file by its **real** extension and the file exists at that path, the server opens it as a normal file: reads see the **compressed** contents on disk, not a decompressed ISO.
+
+Plain `.iso` files and other non-compressed files are listed and opened unchanged.
 
 ## Protocol Details
 
 For complete protocol specifications, see:
 
-- [UDPRDMA Protocol](docs/UDPRDMA.md)
-- [UDPFS Protocol](docs/UDPFS.md)
+- [UDPRDMA Protocol](https://github.com/rickgaiser/neutrino/blob/726c22cfa42287cff37d0bcc20d1e0148805632c/iop/udpfs/UDPRDMA.md)
+- [UDPFS Protocol](https://github.com/rickgaiser/neutrino/blob/726c22cfa42287cff37d0bcc20d1e0148805632c/iop/udpfs/UDPFS.md)
 - [Wireshark dissector](docs/wireshark/)
 
 ## Building from source
@@ -165,9 +175,18 @@ To build all release targets (Linux, macOS, Windows; multiple architectures), ru
 
 ## Troubleshooting
 
-- **Client can't connect** — Ensure the server discovery port (default 62966) is open in your firewall and that `-bind` matches an interface the client can reach. If required, set the port in the `-bind` argument (e.g. `-bind :41233`).
-- **Client timeouts / "got unexpected sequence number"** — If the server has multiple interfaces on the same network (e.g., wired and Wi-Fi connections), the client can receive duplicate packets from different interfaces or bind to the wrong interface. The fix is to bind the data connection to a single interface: use `-bind` with that interface’s IP (e.g. `-bind 192.168.1.100` or `BIND=192.168.1.100`).
-- **CHD not working** — Pre-built binaries don't include CHD; build from source with CGO and libchdr (see [Building from Source](#building-from-source)).
+Common issues and fixes. Run the server with `-verbose` to see more detail about discovery and errors in the server logs.
+
+- **"failed to initialize filesystem"** — The server exits with this when `-fsroot` is not a directory or `-bdpath` cannot be opened. Check that paths exist, that the user has read access (and write access if not using `-ro`), and that the block device or image file is not in use elsewhere.
+
+- **CHD not working** — Pre-built binaries do not include CHD support. Build from source with CGO and libchdr (see [Building from source](#building-from-source)).
+
+- **Client can't connect** — Ensure the server discovery port (default 62966) is open in your firewall and that `-bind` matches an 
+interface the client can reach. If required, set the port in the `-bind` argument (e.g. `-bind :41233`).
+
+- **"Wrong packet type 2 (expected 0/DISCOVERY)"** (in server logs) — The client may be using an older Neutrino (pre–v1.8.0-13) with an incompatible UDPFS protocol; upgrade to the latest Neutrino. This can also happen if the client is sending data to the discovery port by mistake—check that the client is not configured to use the discovery port for data.
+
+- **Client timeouts / "got unexpected sequence number"** (in server logs) — If the server has multiple interfaces on the same network (e.g., wired and Wi-Fi), the client can receive duplicate packets or bind to the wrong interface. Bind the data connection to a single interface with `-bind` and that interface’s IP (e.g. `-bind 192.168.1.100` or `BIND=192.168.1.100`). Run the server with `-verbose` to see these messages when the client times out.
 
 ## License
 

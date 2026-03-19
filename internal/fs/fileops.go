@@ -58,39 +58,26 @@ func (s *Backend) Open(path string, flag int, isDir bool) (handle int32, stat ud
 	exists := fullPath != "" && s.pathExists(fullPath)
 
 	if s.enableCompression {
-		isCompressed := false
 		if !exists {
 			// If requested file doesn't exist and decompression is enabled,
 			// check if any of supported compressed ISO types are present
 			if strings.ToLower(filepath.Ext(fullPath)) == ".iso" {
-				// If path has .iso extension, probe every supported extension
-				base := strings.TrimSuffix(fullPath, filepath.Ext(fullPath))
-				for _, ext := range compression.GetSupportedExtensions() {
-					compressedPath := base + ext
-					if s.pathExists(compressedPath) {
-						fullPath = compressedPath
-						isCompressed = true
-						break
+				// If path has .iso extension, trim it and probe every supported extension
+				compressedPath := strings.TrimSuffix(fullPath, filepath.Ext(fullPath))
+				if s.pathExists(compressedPath) {
+					// Handle compressed image
+					log.Printf("fs: decompressing %s\n", compressedPath)
+					wrapper := compression.Open(compressedPath, s.compressionCacheSize)
+					if wrapper != nil {
+						st, _ := wrapper.Stat()
+						handle := s.allocHandle(s.newFileHandle(wrapper, true))
+						if handle < 0 {
+							wrapper.Close()
+							return handle, udpfs.StatInfo{}, nil
+						}
+						return handle, udpfs.StatInfoFromFile(st), nil
 					}
 				}
-			}
-		} else if slices.Contains(compression.GetSupportedExtensions(), strings.ToLower(filepath.Ext(fullPath))) {
-			// If file is a supported compressed ISO, enable decompression even if the extension is not .iso
-			isCompressed = true
-		}
-
-		if isCompressed {
-			// Handle compressed image
-			log.Printf("fs: decompressing %s\n", fullPath)
-			wrapper := compression.Open(fullPath, s.compressionCacheSize)
-			if wrapper != nil {
-				st, _ := wrapper.Stat()
-				handle := s.allocHandle(s.newFileHandle(wrapper, true))
-				if handle < 0 {
-					wrapper.Close()
-					return handle, udpfs.StatInfo{}, nil
-				}
-				return handle, udpfs.StatInfoFromFile(st), nil
 			}
 		}
 	}
@@ -257,9 +244,9 @@ func (s *Backend) Dread(handle int32) (ok bool, name string, stat udpfs.StatInfo
 	name = entry.Name()
 
 	var st udpfs.StatInfo
-	// If compression is enabled and file has one of supported compressed ISO extensions, replace it with .iso
+	// If compression is enabled and file has one of supported compressed ISO extensions, append .iso
 	if s.enableCompression && slices.Contains(compression.GetSupportedExtensions(), filepath.Ext(name)) {
-		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".iso"
+		name = name + ".iso"
 		entryPath := filepath.Join(dirPath, entry.Name())
 		cst := compression.GetStat(entryPath)
 		if cst == nil {

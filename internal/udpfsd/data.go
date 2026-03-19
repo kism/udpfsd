@@ -27,6 +27,7 @@ func (s *Server) dataHandler() {
 			continue
 		}
 		if n < 6 {
+			// UDPFS data packet must be at least 6 bytes long
 			continue
 		}
 		pkt := make([]byte, n)

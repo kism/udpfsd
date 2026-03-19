@@ -140,7 +140,7 @@ func ProcessDiscoveryPacket(data []byte, expectedService ServiceType) (reply []b
 		return nil, fmt.Errorf("invalid disc header: %v", err)
 	}
 	if disc.ServiceID != uint16(expectedService) {
-		return nil, fmt.Errorf("wrong service ID 0x%04X (expected 0x%04X)", disc.ServiceID, Service_UDPFS)
+		return nil, fmt.Errorf("wrong service ID 0x%04X (expected 0x%04X)", disc.ServiceID, expectedService)
 	}
 	reply = Header{PacketType: PacketInform, SeqNr: 1}.Pack()
 	reply = append(reply, DiscHeader{ServiceID: uint16(expectedService), Reserved: 0}.Pack()...)

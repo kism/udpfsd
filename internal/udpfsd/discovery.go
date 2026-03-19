@@ -25,15 +25,14 @@ func (s *Server) discoveryHandler() {
 			continue
 		}
 		if n < 6 {
+			// UDPRDMA discovery packet must be at least 6 bytes long
 			continue
 		}
 
 		reply, err := udprdma.ProcessDiscoveryPacket(buf[:n], udprdma.Service_UDPFS)
 		if err != nil {
-			if s.verbose {
-				log.Printf("udpfsd/discovery: [%s]: %v", addr, err)
-			}
-			return
+			log.Printf("udpfsd/discovery: [%s]: %v", addr, err)
+			continue
 		}
 		s.dataConn.WriteToUDP(reply, addr)
 		log.Printf("[%s]: discovery request received", addr)

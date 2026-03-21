@@ -28,7 +28,7 @@ var (
 	sectorSize           = flag.Int("sector-size", 512, "Sector size for block device\nEnvironment variable: SECTOR_SIZE")
 	readOnly             = flag.Bool("ro", false, "Serve in read-only mode\nEnvironment variable: RO")
 	verbose              = flag.Bool("verbose", false, "Verbose output\nEnvironment variable: VERBOSE")
-	enableCompression    = flag.Bool("compression", false, fmt.Sprintf("Enable transparent decompression for %s\nEnvironment variable: COMPRESSION", strings.Join(compression.GetSupportedFormats(), ", ")))
+	disableCompression   = flag.Bool("no-compression", false, fmt.Sprintf("Disable transparent decompression for %s\nEnvironment variable: NO_COMPRESSION", strings.Join(compression.GetSupportedFormats(), ", ")))
 	compressionCacheSize = flag.Int("compression-cache-size", 32, "Number of decompressed blocks to cache per file\nEnvironment variable: COMPRESSION_CACHE_SIZE")
 )
 
@@ -57,7 +57,7 @@ func main() {
 	if *readOnly {
 		fsopts = append(fsopts, fs.WithReadOnly())
 	}
-	if *enableCompression {
+	if !*disableCompression {
 		fsopts = append(fsopts, fs.WithCompression())
 	}
 	// Initialize filesystem backend
@@ -122,9 +122,9 @@ func loadEnvironment() {
 			*verbose = verboseVal
 		}
 	}
-	if value := envVarLookup("compression", ""); value != "" {
+	if value := envVarLookup("no-compression", ""); value != "" {
 		if compressionVal, err := strconv.ParseBool(value); err == nil {
-			*enableCompression = compressionVal
+			*disableCompression = compressionVal
 		}
 	}
 	if value := envVarLookup("compression-cache-size", ""); value != "" {

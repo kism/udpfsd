@@ -81,7 +81,7 @@ Environment variable names are the uppercase form of the flag name with hyphens 
 | `SECTOR_SIZE` | `-sector-size` | Sector size for block device in bytes (default: 512) |
 | `RO` | `-ro` | Serve in read-only mode |
 | `VERBOSE` | `-verbose` | Enable verbose output |
-| `COMPRESSION` | `-compression` | Enable transparent decompression for CHD/CSO/ZSO |
+| `NO_COMPRESSION` | `-no-compression` | Disable transparent decompression for CHD/CSO/ZSO (enabled by default) |
 | `COMPRESSION_CACHE_SIZE` | `-compression-cache-size` | Number of cached blocks per file (default: 32) |
 
 ### Limitations
@@ -96,9 +96,13 @@ Environment variable names are the uppercase form of the flag name with hyphens 
 $ FSROOT=/mnt/files RO=1 udpfsd
 $ udpfsd -fsroot /mnt/files -ro
 
-# Serve with compression enabled and verbose logging
-$ FSROOT=/path/to/files COMPRESSION=1 VERBOSE=1 udpfsd
-$ udpfsd -fsroot /path/to/files -compression -verbose
+# Serve without compression disabled and verbose logging (default is compression enabled)
+$ FSROOT=/path/to/files NO_COMPRESSION=0 VERBOSE=1 udpfsd
+$ udpfsd -fsroot /path/to/files -no-compression -verbose
+
+# Explicitly disable compression:
+$ FSROOT=/path/to/files COMPRESSION=0 VERBOSE=1 udpfsd
+$ udpfsd -fsroot /path/to/files -no-compression
 
 # Bind to specific interface with read-only mode, serving both directory and block device
 $ BDPATH=/mnt/exfat.img FSROOT=/shared BIND=192.168.1.100 RO=1 udpfsd
@@ -114,25 +118,29 @@ $ udpfsd
 
 ## Compression Support
 
-When the `COMPRESSION` (or `-compression`) flag is enabled, the server can serve **CHD**, **CSO**, and **ZSO** images as if they were raw disc images.  
+By default, the server enables transparent decompression for **CHD**, **CSO**, and **ZSO** images, serving them as if they were raw disc images.  
 On-the-fly decompression is used **only** when the client opens the virtual name produced by directory listings (the real filename with `.iso` appended; see [Opening a file](#opening-a-file)).  
 If the client opens the file by its actual name on disk (e.g. `game.cso`), the server returns the compressed file bytes unchanged.
+
+To disable compression support, use the `-no-compression` flag or set `NO_COMPRESSION=1`.
 
 The decompression cache stores recently accessed blocks per file using an LRU strategy.  
 The default cache size is 32 blocks, configurable via `COMPRESSION_CACHE_SIZE`.
 
 ### Directory listings
 
-If a file is stored as a compressed image (for example `game.cso` or `disc.zso`), the name returned to the client has `.iso` appended (e.g. `game.cso.iso`).  
+When compression support is enabled, if a file is stored as a compressed image (for example `game.cso` or `disc.zso`), the name returned to the client has `.iso` appended (e.g. `game.cso.iso`).  
 The reported size is the uncompressed disc size, not the compressed file size on disk.
 
 ### Opening a file
 
-When the client opens a path that ends in `.iso` and no file exists at that exact name, the server drops the trailing `.iso` and, if that path names a supported compressed image on disk, serves it **decompressed** (e.g. `game.cso.iso` → underlying `game.cso`).
+When compression support is enabled: when the client opens a path that ends in `.iso` and no file exists at that exact name, the server drops the trailing `.iso` and, if that path names a supported compressed image on disk, serves it **decompressed** (e.g. `game.cso.iso` → underlying `game.cso`).
 
 If the client opens the compressed file by its **real** extension and the file exists at that path, the server opens it as a normal file: reads see the **compressed** contents on disk, not a decompressed ISO.
 
-Plain `.iso` files and other non-compressed files are listed and opened unchanged.
+When compression support is disabled, all files (including compressed images) are served as-is without any decompression behavior.
+
+Plain `.iso` files and other non-compressed files are listed and opened unchanged in both modes.
 
 ## Protocol Details
 

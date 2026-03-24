@@ -76,11 +76,12 @@ func (s *Backend) allocHandle(h handle) int32 {
 		// Determine the oldest handle
 		if s.lastUsed[i].Before(oldestHandleTimestamp) {
 			oldestHandle = i
+			oldestHandleTimestamp = s.lastUsed[i]
 		}
 	}
 
 	if time.Since(oldestHandleTimestamp) >= handleMaxLastUsed {
-		// If the oldest handle hasn't been used for at least HandleMaxLastUsed,
+		// If the oldest handle hasn't been used for at least handleMaxLastUsed,
 		// close and reallocate its index to the new handle
 		log.Printf("fs: no free handles left, evicting handle %d", oldestHandle+1)
 		s.handles[oldestHandle].Close()
@@ -120,6 +121,7 @@ func (s *Backend) getFile(handle int32) *fileHandle {
 
 	// Handle 0 is reserved for block device, so our external handles start with 1
 	handle = handle - 1
+
 	h := s.handles[handle]
 	if h == nil {
 		return nil
@@ -165,7 +167,9 @@ func (s *Backend) getDir(handle int32) *dirHandle {
 	defer s.Unlock()
 
 	// Handle 0 is reserved for block device, so our external handles start with 1
-	h := s.handles[handle-1]
+	handle = handle - 1
+
+	h := s.handles[handle]
 	if h == nil {
 		return nil
 	}

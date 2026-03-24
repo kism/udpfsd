@@ -40,6 +40,8 @@ Download the archive for your platform and extract it.
 | Linux    | ARM 64-bit   | `udpfsd-linux-arm64-<version>.zip` |
 | Linux    | ARM v7 (32-bit) | `udpfsd-linux-armv7-<version>.zip` |
 | Linux    | ARM v6 (32-bit) | `udpfsd-linux-armv6-<version>.zip` |
+| Linux    | MIPS32 BE (softfloat) | `udpfsd-linux-mipseb-<version>.zip` |
+| Linux    | MIPS32 LE (softfloat) | `udpfsd-linux-mipsel-<version>.zip` |
 | macOS    | AMD64       | `udpfsd-macos-amd64-<version>.zip` |
 | macOS    | ARM 64-bit (Apple Silicon) | `udpfsd-macos-arm64-<version>.zip` |
 | Windows  | AMD64       | `udpfsd-windows-amd64-<version>.zip` |

@@ -34,18 +34,19 @@ Download the archive for your platform and extract it.
 
 *`<version>` is the release tag (e.g. `v1.0.0`) or `nightly` for development builds.*
 
-| Platform | Architecture | Release archive |
-|----------|--------------|-------------------------|
-| Linux    | AMD64       | `udpfsd-linux-amd64-<version>.zip` |
-| Linux    | ARM 64-bit   | `udpfsd-linux-arm64-<version>.zip` |
-| Linux    | ARM v7 (32-bit) | `udpfsd-linux-armv7-<version>.zip` |
-| Linux    | ARM v6 (32-bit) | `udpfsd-linux-armv6-<version>.zip` |
-| Linux    | MIPS32 BE (softfloat) | `udpfsd-linux-mipseb-<version>.zip` |
-| Linux    | MIPS32 LE (softfloat) | `udpfsd-linux-mipsel-<version>.zip` |
-| macOS    | AMD64       | `udpfsd-macos-amd64-<version>.zip` |
-| macOS    | ARM 64-bit (Apple Silicon) | `udpfsd-macos-arm64-<version>.zip` |
-| Windows  | AMD64       | `udpfsd-windows-amd64-<version>.zip` |
-| Windows  | ARM 64-bit   | `udpfsd-windows-arm64-<version>.zip` |
+| Platform | Architecture               | Release archive                      |
+|----------|----------------------------|--------------------------------------|
+| Linux    | AMD64                      | `udpfsd-linux-amd64-<version>.zip`   |
+| Linux    | ARM 64-bit                 | `udpfsd-linux-arm64-<version>.zip`   |
+| Linux    | ARM v7 (32-bit)            | `udpfsd-linux-armv7-<version>.zip`   |
+| Linux    | ARM v6 (32-bit)            | `udpfsd-linux-armv6-<version>.zip`   |
+| Linux    | MIPS32 BE (softfloat)      | `udpfsd-linux-mipseb-<version>.zip`  |
+| Linux    | MIPS32 LE (softfloat)      | `udpfsd-linux-mipsel-<version>.zip`  |
+| Linux    | RISC-V (64-bit)            | `udpfsd-linux-riscv64-<version>.zip` |
+| macOS    | AMD64                      | `udpfsd-macos-amd64-<version>.zip`   |
+| macOS    | ARM 64-bit (Apple Silicon) | `udpfsd-macos-arm64-<version>.zip`   |
+| Windows  | AMD64                      | `udpfsd-windows-amd64-<version>.zip` |
+| Windows  | ARM 64-bit                 | `udpfsd-windows-arm64-<version>.zip` |
 
 > **Note:** Pre-built binaries support only CSO and ZSO.  
 For CHD, build from source with CGO (see [building from source](#building-from-source)).

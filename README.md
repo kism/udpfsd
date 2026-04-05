@@ -84,6 +84,8 @@ Environment variable names are the uppercase form of the flag name with hyphens 
 | `SECTOR_SIZE` | `-sector-size` | Sector size for block device in bytes (default: 512) |
 | `RO` | `-ro` | Serve in read-only mode |
 | `VERBOSE` | `-verbose` | Enable verbose output |
+| `METRICS` | `-metrics` | Enable server statistics logging |
+| `METRICS_PERIOD` | `-metrics-period` | Metric logging period in Go time.Duration format (default: 1m) |
 | `NO_COMPRESSION` | `-no-compression` | Disable transparent decompression for CHD/CSO/ZSO (enabled by default) |
 | `COMPRESSION_CACHE_SIZE` | `-compression-cache-size` | Number of cached blocks per file (default: 32) |
 

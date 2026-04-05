@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"log"
 
@@ -28,6 +29,8 @@ var (
 	sectorSize           = flag.Int("sector-size", 512, "Sector size for block device\nEnvironment variable: SECTOR_SIZE")
 	readOnly             = flag.Bool("ro", false, "Serve in read-only mode\nEnvironment variable: RO")
 	verbose              = flag.Bool("verbose", false, "Verbose output\nEnvironment variable: VERBOSE")
+	logMetrics           = flag.Bool("metrics", false, "Log metrics\nEnvironment variable: METRICS")
+	logMetricsPeriod     = flag.String("metrics-period", "", "Metric logging period in Go time.Duration format\nEnvironment variable: METRICS_PERIOD (default 1m = 1 minute)")
 	disableCompression   = flag.Bool("no-compression", false, fmt.Sprintf("Disable transparent decompression for %s\nEnvironment variable: NO_COMPRESSION", strings.Join(compression.GetSupportedFormats(), ", ")))
 	compressionCacheSize = flag.Int("compression-cache-size", 32, "Number of decompressed blocks to cache per file\nEnvironment variable: COMPRESSION_CACHE_SIZE")
 )
@@ -66,6 +69,13 @@ func main() {
 		log.Fatalf("failed to initialize filesystem: %v\n", err)
 	}
 
+	var metricsPeriod time.Duration
+	if *logMetricsPeriod != "" {
+		if metricsPeriod, err = time.ParseDuration(*logMetricsPeriod); err != nil {
+			metricsPeriod = 0
+		}
+	}
+
 	// Build server options
 	opts := []udpfsd.ServerOptFunc{
 		udpfsd.WithDiscoveryPort(*port),
@@ -74,6 +84,9 @@ func main() {
 	}
 	if *verbose {
 		opts = append(opts, udpfsd.WithVerbose())
+	}
+	if *logMetrics {
+		opts = append(opts, udpfsd.WithMetrics(metricsPeriod))
 	}
 	// Initialize server
 	server, err := udpfsd.New(opts...)
@@ -121,6 +134,14 @@ func loadEnvironment() {
 		if verboseVal, err := strconv.ParseBool(value); err == nil {
 			*verbose = verboseVal
 		}
+	}
+	if value := envVarLookup("metrics", ""); value != "" {
+		if metricsVal, err := strconv.ParseBool(value); err == nil {
+			*logMetrics = metricsVal
+		}
+	}
+	if value := envVarLookup("metrics-period", ""); value != "" {
+		*logMetricsPeriod = value
 	}
 	if value := envVarLookup("no-compression", ""); value != "" {
 		if compressionVal, err := strconv.ParseBool(value); err == nil {

@@ -11,18 +11,31 @@ import (
 // Connection wraps a UDPRDMA session and an FS, and provides UDPFS reply encoding, sending, and request dispatch.
 // Create with NewConnection; then call HandlePayload for each received UDPFS data payload.
 type Connection struct {
-	sess    *udprdma.Session
-	fs      FS
+	fs   FS
+	sess *udprdma.Session
+	*metricCollector
 	verbose bool
 }
 
 // NewConnection returns a Connection that sends via the given session and dispatches requests to fs.
-func NewConnection(sess *udprdma.Session, fs FS, verbose bool) *Connection {
-	return &Connection{sess: sess, fs: fs, verbose: verbose}
+func NewConnection(sess *udprdma.Session, fs FS, verbose bool, collectMetrics bool) *Connection {
+	c := &Connection{
+		sess:    sess,
+		fs:      fs,
+		verbose: verbose,
+	}
+	if collectMetrics {
+		c.metricCollector = newMetricCollector()
+	}
+	return c
 }
 
 func (c *Connection) GetUDPRDMASession() *udprdma.Session {
 	return c.sess
+}
+
+func (c *Connection) GetMetrics() ConnectionStats {
+	return c.metricCollector.GetMetrics()
 }
 
 // SendACK sends an ACK or NACK packet (no payload).

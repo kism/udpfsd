@@ -1,5 +1,7 @@
 package udpfs
 
+import "fmt"
+
 // MsgType is the UDPFS message type (first byte of payload)
 type MsgType uint8
 
@@ -27,6 +29,39 @@ const (
 	MsgBreadReq  MsgType = 0x28
 	MsgBwriteReq MsgType = 0x2A
 )
+
+func (m MsgType) String() string {
+	switch m {
+	case MsgOpenReq:
+		return "Open"
+	case MsgCloseReq:
+		return "Close"
+	case MsgReadReq:
+		return "Read"
+	case MsgWriteReq:
+		return "Write"
+	case MsgWriteData:
+		return "WriteData"
+	case MsgLseekReq:
+		return "Lseek"
+	case MsgDreadReq:
+		return "Dread"
+	case MsgGetstatReq:
+		return "Getstat"
+	case MsgMkdirReq:
+		return "Mkdir"
+	case MsgRemoveReq:
+		return "Remove"
+	case MsgRmdirReq:
+		return "Rmdir"
+	case MsgBreadReq:
+		return "Bread"
+	case MsgBwriteReq:
+		return "Bwrite"
+	default:
+		return fmt.Sprintf("Unknown (0x%02x)", uint8(m))
+	}
+}
 
 // PS2 file mode flags
 const (

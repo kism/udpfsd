@@ -169,7 +169,7 @@ func PackGetstatReply(result int32, st StatInfo) []byte {
 	return b
 }
 
-func logPayload(addr *net.UDPAddr, msgType MsgType, payload []byte) {
+func logPayload(addr *net.UDPAddr, msgType MsgType, status int, payload []byte) {
 	switch msgType {
 	case MsgOpenReq:
 		pathEnd := 0
@@ -179,36 +179,36 @@ func logPayload(addr *net.UDPAddr, msgType MsgType, payload []byte) {
 		path := string(payload[8 : 8+pathEnd])
 		isDir := len(payload) > 1 && payload[1] != 0
 		if isDir {
-			log.Printf("[%s]: DOPEN %q", addr, path)
+			log.Printf("[%s]: DOPEN %q: %d", addr, path, status)
 		} else {
-			log.Printf("[%s]: OPEN %q", addr, path)
+			log.Printf("[%s]: OPEN %q: %d", addr, path, status)
 		}
 	case MsgCloseReq:
 		if len(payload) >= 8 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
-			log.Printf("[%s]: CLOSE handle=%d", addr, handle)
+			log.Printf("[%s]: CLOSE handle=%d: %d", addr, handle, status)
 		}
 	case MsgReadReq:
 		if len(payload) >= 12 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
 			size := uint32(payload[8]) | uint32(payload[9])<<8 | uint32(payload[10])<<16 | uint32(payload[11])<<24
-			log.Printf("[%s]: READ handle=%d size=%d", addr, handle, size)
+			log.Printf("[%s]: READ handle=%d size=%d: %d", addr, handle, size, status)
 		}
 	case MsgWriteReq:
 		if len(payload) >= 12 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
 			size := uint32(payload[8]) | uint32(payload[9])<<8 | uint32(payload[10])<<16 | uint32(payload[11])<<24
-			log.Printf("[%s]: WRITE handle=%d size=%d", addr, handle, size)
+			log.Printf("[%s]: WRITE handle=%d size=%d: %d", addr, handle, size, status)
 		}
 	case MsgLseekReq:
 		if len(payload) >= 16 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
-			log.Printf("[%s]: LSEEK handle=%d", addr, handle)
+			log.Printf("[%s]: LSEEK handle=%d: %d", addr, handle, status)
 		}
 	case MsgDreadReq:
 		if len(payload) >= 8 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
-			log.Printf("[%s]: DREAD handle=%d", addr, handle)
+			log.Printf("[%s]: DREAD handle=%d: %d", addr, handle, status)
 		}
 	case MsgGetstatReq:
 		pathEnd := 0
@@ -216,25 +216,25 @@ func logPayload(addr *net.UDPAddr, msgType MsgType, payload []byte) {
 			pathEnd++
 		}
 		path := string(payload[4 : 4+pathEnd])
-		log.Printf("[%s]: GETSTAT %q", addr, path)
+		log.Printf("[%s]: GETSTAT %q: %d", addr, path, status)
 	case MsgMkdirReq:
 		pathEnd := 0
 		for pathEnd < len(payload)-4 && payload[4+pathEnd] != 0 {
 			pathEnd++
 		}
-		log.Printf("[%s]: MKDIR %q", addr, string(payload[4:4+pathEnd]))
+		log.Printf("[%s]: MKDIR %q: %d", addr, string(payload[4:4+pathEnd]), status)
 	case MsgRemoveReq:
 		pathEnd := 0
 		for pathEnd < len(payload)-4 && payload[4+pathEnd] != 0 {
 			pathEnd++
 		}
-		log.Printf("[%s]: REMOVE %q", addr, string(payload[4:4+pathEnd]))
+		log.Printf("[%s]: REMOVE %q: %d", addr, string(payload[4:4+pathEnd]), status)
 	case MsgRmdirReq:
 		pathEnd := 0
 		for pathEnd < len(payload)-4 && payload[4+pathEnd] != 0 {
 			pathEnd++
 		}
-		log.Printf("[%s]: RMDIR %q", addr, string(payload[4:4+pathEnd]))
+		log.Printf("[%s]: RMDIR %q: %d", addr, string(payload[4:4+pathEnd]), status)
 	case MsgBreadReq:
 		if len(payload) >= 16 {
 			handle := int32(uint32(payload[4]) | uint32(payload[5])<<8 | uint32(payload[6])<<16 | uint32(payload[7])<<24)
@@ -242,7 +242,7 @@ func logPayload(addr *net.UDPAddr, msgType MsgType, payload []byte) {
 			sectorNrLo := binary.LittleEndian.Uint32(payload[8:12])
 			sectorNrHi := binary.LittleEndian.Uint32(payload[12:16])
 			sectorNr := int64(sectorNrHi)<<32 | int64(sectorNrLo)
-			log.Printf("[%s]: BREAD handle=%d sector=%d sector_count=%d", addr, handle, sectorNr, sectorCount)
+			log.Printf("[%s]: BREAD handle=%d sector=%d sector_count=%d: %d", addr, handle, sectorNr, sectorCount, status)
 		}
 	case MsgBwriteReq:
 		if len(payload) >= 16 {
@@ -251,7 +251,7 @@ func logPayload(addr *net.UDPAddr, msgType MsgType, payload []byte) {
 			sectorNrLo := binary.LittleEndian.Uint32(payload[8:12])
 			sectorNrHi := binary.LittleEndian.Uint32(payload[12:16])
 			sectorNr := int64(sectorNrHi)<<32 | int64(sectorNrLo)
-			log.Printf("[%s]: BWRITE handle=%d sector=%d sector_count=%d", addr, handle, sectorNr, sectorCount)
+			log.Printf("[%s]: BWRITE handle=%d sector=%d sector_count=%d: %d", addr, handle, sectorNr, sectorCount, status)
 		}
 	}
 }

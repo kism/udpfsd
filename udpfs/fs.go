@@ -51,6 +51,7 @@ const (
 	EACCES = 13
 	EEXIST = 17
 	ENODEV = 19
+	EINVAL = 22
 	EMFILE = 24
 )
 

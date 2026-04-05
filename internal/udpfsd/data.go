@@ -50,6 +50,7 @@ func (s *Server) handleData(data []byte, addr *net.UDPAddr) {
 				}),
 				s.fs,
 				s.verbose,
+				s.logMetrics,
 			),
 			time.Now(),
 		}

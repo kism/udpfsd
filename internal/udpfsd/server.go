@@ -16,6 +16,7 @@ import (
 
 // Server is the UDPFS daemon: sockets, UDPRDMA session, and dispatch to udpfs.FS.
 type Server struct {
+	startTime time.Time
 
 	// FS is the filesystem implementation; the protocol layer (udpfs) parses packets and calls FS.
 	fs udpfs.FS
@@ -28,11 +29,14 @@ type Server struct {
 	cMap map[string]*peer
 
 	bindIP string
-	port   int
 	wg     sync.WaitGroup
 
+	port                 int
+	metricsLoggingPeriod time.Duration
+
 	sync.Mutex
-	verbose bool
+	verbose    bool
+	logMetrics bool
 }
 
 type peer struct {
@@ -41,8 +45,9 @@ type peer struct {
 }
 
 const (
-	peerTimeout         = time.Hour
-	peerCleanupInterval = 30 * time.Minute
+	peerTimeout          = time.Hour
+	peerCleanupInterval  = 30 * time.Minute
+	metricsLoggingPeriod = time.Minute
 )
 
 type ServerOptFunc func(s *Server)
@@ -76,11 +81,22 @@ func WithFS(fs udpfs.FS) func(s *Server) {
 	}
 }
 
+func WithMetrics(loggingPeriod time.Duration) func(s *Server) {
+	return func(s *Server) {
+		if loggingPeriod > 0 {
+			s.metricsLoggingPeriod = loggingPeriod
+		}
+		s.logMetrics = true
+	}
+}
+
 // Creates new udpfsd server
 func New(opts ...ServerOptFunc) (*Server, error) {
 	s := &Server{
-		port: udprdma.UDPFSPort,
-		cMap: make(map[string]*peer),
+		port:                 udprdma.UDPFSPort,
+		cMap:                 make(map[string]*peer),
+		logMetrics:           false,
+		metricsLoggingPeriod: metricsLoggingPeriod,
 	}
 	for _, f := range opts {
 		f(s)
@@ -123,12 +139,18 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	s.startTime = time.Now()
+
 	s.wg.Add(2)
 	go s.discoveryHandler()
 	log.Printf("udpfsd: listening for incoming discovery packets on %s", s.discConn.LocalAddr())
 	go s.dataHandler()
 	log.Printf("udpfsd: listening for incoming data packets on %s", s.dataConn.LocalAddr())
 	go s.cleanup()
+
+	if s.logMetrics {
+		go s.metricsLogger()
+	}
 	return nil
 }
 
@@ -148,6 +170,22 @@ func (s *Server) cleanup() {
 				delete(s.cMap, pAddr)
 			}
 		}
+		s.Unlock()
+	}
+}
+
+func (s *Server) metricsLogger() {
+	for range time.Tick(s.metricsLoggingPeriod) {
+		s.Lock()
+		fmt.Printf(`
+========== Server statistics (%s) ==========
+Uptime: %s
+`, time.Now().Format(time.DateTime), time.Since(s.startTime).Round(time.Second))
+
+		for pAddr, p := range s.cMap {
+			s.printPeerStats(pAddr, p)
+		}
+		fmt.Println("=============================================================")
 		s.Unlock()
 	}
 }

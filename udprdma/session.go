@@ -7,21 +7,25 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 // Session is a UDPRDMA data connection session (reliable send/recv state).
 type Session struct {
-	writeTo  func(addr *net.UDPAddr, data []byte)
-	peerAddr *net.UDPAddr
+	// Session statistics
+	creationTime time.Time
+	writeTo      func(addr *net.UDPAddr, data []byte)
+	peerAddr     *net.UDPAddr
 
 	pendingSend *PendingSend
 	txBuffer    []txPacket
 
+	metricContainer
+	sync.Mutex
+
 	txSeqNr       uint16
 	txSeqNrAcked  uint16
 	rxSeqExpected uint16
-
-	sync.Mutex
 }
 
 type txPacket struct {
@@ -38,7 +42,13 @@ type PendingSend struct {
 
 // NewSession creates a session that sends via writeTo.
 func NewSession(peerAddr net.UDPAddr, writeTo func(addr *net.UDPAddr, data []byte)) *Session {
-	return &Session{writeTo: writeTo, peerAddr: &peerAddr}
+	s := &Session{
+		writeTo:      writeTo,
+		peerAddr:     &peerAddr,
+		creationTime: time.Now(),
+	}
+
+	return s
 }
 
 // Validates UDPRDMA DATA packet and returns payload to pass to the underlying protocol header or nil otherwise
@@ -54,6 +64,9 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid data header: %v", err)
 	}
+
+	s.packetsRx++
+
 	payload = data[6:]
 	hdrSize := int(header.HdrWordCount) * 4
 	payloadSize := hdrSize + int(header.DataByteCount)
@@ -73,15 +86,18 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 		// On NACK, roll back sequence number and retransmit the previous packet
 		s.txSeqNrAcked = (header.SeqNrAck - 1) & 0xFFF
 		s.RetransmitFrom(header.SeqNrAck)
+		s.peerNACKs++
 		return nil, nil
 	}
 
 	if hdr.SeqNr != s.rxSeqExpected {
 		prevSeq := (s.rxSeqExpected - 1) & 0xFFF
 		if hdr.SeqNr == prevSeq {
+			s.unexpectedSeqNrs++
 			s.SendACK(true)
+			log.Printf("[%s]: got previous packet %d (expected %d), acking", s.peerAddr, hdr.SeqNr, s.rxSeqExpected)
 			if s.pendingSend != nil {
-				// Retrasmit from the last unacked packet
+				// Retransmit from the last unacked packet
 				s.RetransmitFrom((s.txSeqNrAcked + 1) & 0xFFF)
 			}
 			return nil, nil
@@ -90,6 +106,7 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 			log.Printf("[%s]: got unexpected sequence number 0, assuming the peer was reset", s.peerAddr)
 			s.ResetSession()
 		} else {
+			s.unexpectedSeqNrs++
 			log.Printf("[%s]: got unexpected sequence number %d (expected %d)", s.peerAddr, hdr.SeqNr, s.rxSeqExpected)
 			s.SendACK(false)
 			return nil, nil
@@ -120,6 +137,8 @@ func (s *Session) SendData(payload []byte) {
 	packet := append(hdr, buf...)
 	s.writeTo(s.peerAddr, packet)
 	s.txSeqNr = (s.txSeqNr + 1) & 0xFFF
+
+	s.packetsTx++
 }
 
 // SendRawDataWithHeader sends header + data with header on first packet; may set pending and return.

@@ -48,6 +48,8 @@ func (s *Session) SendDataPacket(payload []byte, fin bool, hdrSize int) {
 	s.txBuffer = append(s.txBuffer, txPacket{seq: s.txSeqNr, data: pkt})
 	s.writeTo(s.peerAddr, pkt)
 	s.txSeqNr = (s.txSeqNr + 1) & 0xFFF
+
+	s.packetsTx++
 }
 
 // OnAck updates send state from a received ACK and prunes txBuffer.
@@ -78,6 +80,11 @@ func (s *Session) SendACK(ack bool) {
 		SeqNrAck: seqAck, Flags: flags, HdrWordCount: 0, DataByteCount: 0,
 	}.Pack()...)
 	s.writeTo(s.peerAddr, pkt)
+
+	s.packetsTx++
+	if !ack {
+		s.nacks++
+	}
 }
 
 // RetransmitFrom retransmits buffered packets from fromSeq.
@@ -87,6 +94,8 @@ func (s *Session) RetransmitFrom(fromSeq uint16) {
 		if diff < 2048 {
 			s.writeTo(s.peerAddr, p.data)
 		}
+		s.packetsTx++
+		s.retransmits++
 	}
 }
 
@@ -97,6 +106,7 @@ func (s *Session) ResetSession() {
 	s.txBuffer = nil
 	s.pendingSend = nil
 	s.rxSeqExpected = 0
+	s.peerResets++
 }
 
 // InFlight returns the number of unacknowledged packets.

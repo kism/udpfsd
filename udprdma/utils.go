@@ -6,21 +6,21 @@ import (
 
 // ContinuePendingSend sends more chunks when flow control allows (call after OnAck).
 func (s *Session) ContinuePendingSend() {
-	for s.pendingSend != nil && s.InFlight() < SendWindow {
+	for s.pendingSend.data != nil && s.InFlight() < SendWindow {
 		ps := s.pendingSend
-		if ps.Offset >= len(ps.Data) {
-			s.pendingSend = nil
+		if ps.offset >= len(ps.data) {
+			s.pendingSend.data = nil
 			return
 		}
-		chunkSize := ps.MaxChunk
-		if ps.Offset+chunkSize > len(ps.Data) {
-			chunkSize = len(ps.Data) - ps.Offset
+		chunkSize := ps.maxChunk
+		if ps.offset+chunkSize > len(ps.data) {
+			chunkSize = len(ps.data) - ps.offset
 		}
-		fin := ps.Offset+chunkSize >= len(ps.Data)
-		chunk := ps.Data[ps.Offset : ps.Offset+chunkSize]
-		ps.Offset += chunkSize
-		if ps.Offset >= len(ps.Data) {
-			s.pendingSend = nil
+		fin := ps.offset+chunkSize >= len(ps.data)
+		chunk := ps.data[ps.offset : ps.offset+chunkSize]
+		ps.offset += chunkSize
+		if ps.offset >= len(ps.data) {
+			s.pendingSend.data = nil
 		}
 		s.SendDataPacket(chunk, fin, 0)
 	}
@@ -36,15 +36,17 @@ func (s *Session) SendDataPacket(payload []byte, fin bool, hdrSize int) {
 		flags |= uint8(DataFlagFIN)
 	}
 
-	// Set len to required size and clear
+	// Set len to required size
 	pkt := s.txBuffer[s.txWriteIndex].data[:hdrSize+padded+headerSize+dataHeaderSize]
 
+	// Assemble the packet
 	Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack(pkt)
 	DataHeader{
 		SeqNrAck: (s.rxSeqExpected - 1) & 0xFFF, Flags: flags,
 		HdrWordCount: uint8(hdrSize / 4), DataByteCount: uint16(padded),
 	}.Pack(pkt[headerSize:])
 	copy(pkt[headerSize+dataHeaderSize:], payload)
+	// Zero-out padding
 	clear(pkt[headerSize+dataHeaderSize+len(payload):])
 
 	s.txBuffer[s.txWriteIndex].seq = s.txSeqNr
@@ -131,9 +133,12 @@ func (s *Session) ResetSession() {
 	s.txSeqNrAcked = 0
 	s.txReadIndex = 0
 	s.txWriteIndex = 0
-	s.pendingSend = nil
+	s.pendingSend.data = nil
 	s.rxSeqExpected = 0
 	s.peerResets++
+	if s.resetCallback != nil {
+		s.resetCallback()
+	}
 }
 
 // InFlight returns the number of unacknowledged packets.

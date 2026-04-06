@@ -17,13 +17,15 @@ type Session struct {
 	writeTo      func(addr *net.UDPAddr, data []byte)
 	peerAddr     *net.UDPAddr
 
-	pendingSend *PendingSend
+	pendingSend   *pendingSend
+	resetCallback func()
 	// Transmit ring buffer
 	txBuffer     [2048]txPacket
 	txWriteIndex int
 	txReadIndex  int
 
 	metricContainer
+
 	sync.Mutex
 
 	txSeqNr       uint16
@@ -38,11 +40,11 @@ type txPacket struct {
 	seq  uint16
 }
 
-// PendingSend holds state for a multi-packet send waiting for window ACK.
-type PendingSend struct {
-	Data     []byte
-	Offset   int
-	MaxChunk int
+// pendingSend holds state for a multi-packet send waiting for window ACK.
+type pendingSend struct {
+	data     []byte
+	offset   int
+	maxChunk int
 }
 
 // NewSession creates a session that sends via writeTo.
@@ -51,6 +53,7 @@ func NewSession(peerAddr net.UDPAddr, writeTo func(addr *net.UDPAddr, data []byt
 		writeTo:      writeTo,
 		peerAddr:     &peerAddr,
 		creationTime: time.Now(),
+		pendingSend:  &pendingSend{},
 	}
 	for i := range s.txBuffer {
 		s.txBuffer[i] = txPacket{
@@ -59,6 +62,11 @@ func NewSession(peerAddr net.UDPAddr, writeTo func(addr *net.UDPAddr, data []byt
 	}
 
 	return s
+}
+
+// Sets function that will be called on peer reset
+func (s *Session) SetResetCallback(f func()) {
+	s.resetCallback = f
 }
 
 // Validates UDPRDMA DATA packet and returns payload to pass to the underlying protocol header or nil otherwise
@@ -106,7 +114,7 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 			s.unexpectedSeqNrs++
 			s.sendACK(true)
 			log.Printf("[%s]: got previous packet %d (expected %d), acking", s.peerAddr, hdr.SeqNr, s.rxSeqExpected)
-			if s.pendingSend != nil {
+			if s.pendingSend.data != nil {
 				// Retransmit from the last unacked packet
 				s.RetransmitFrom((s.txSeqNrAcked + 1) & 0xFFF)
 			}
@@ -161,7 +169,8 @@ func (s *Session) SendRawDataWithHeader(header, data []byte) {
 
 	s.txReadIndex = 0
 	s.txWriteIndex = 0
-	s.pendingSend = nil
+	s.pendingSend.data = nil
+
 	maxChunk := optimalChunkSize(len(data))
 	firstDataMax := maxChunk
 	if len(header) < MaxDataPayload {
@@ -183,7 +192,9 @@ func (s *Session) SendRawDataWithHeader(header, data []byte) {
 	offset := firstChunkSize
 	for offset < len(data) {
 		if s.InFlight() >= SendWindow {
-			s.pendingSend = &PendingSend{Data: data, Offset: offset, MaxChunk: maxChunk}
+			s.pendingSend.data = data
+			s.pendingSend.offset = offset
+			s.pendingSend.maxChunk = maxChunk
 			return
 		}
 		chunkSize := maxChunk

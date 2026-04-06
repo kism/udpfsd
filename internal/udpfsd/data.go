@@ -44,7 +44,7 @@ func (s *Server) dataHandler() {
 func (s *Server) handleData(data []byte, addr *net.UDPAddr) {
 	// Get connection handle
 	s.Lock()
-	c, ok := s.cMap[addr.String()]
+	c, ok := s.cMap[addr.AddrPort()]
 	if !ok {
 		log.Printf("[%s]: creating new connection", addr)
 		c = &peer{
@@ -58,7 +58,7 @@ func (s *Server) handleData(data []byte, addr *net.UDPAddr) {
 			),
 			time.Now(),
 		}
-		s.cMap[addr.String()] = c
+		s.cMap[addr.AddrPort()] = c
 	} else {
 		// Update last seen time
 		c.lastSeen = time.Now()

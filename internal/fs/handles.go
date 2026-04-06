@@ -113,6 +113,10 @@ func (s *Backend) freeHandle(handle int32) bool {
 }
 
 func (s *Backend) getFile(handle int32) *fileHandle {
+	if handle < 0 {
+		return nil
+	}
+
 	if handle == udpfs.BlockDeviceHandle {
 		return s.bdHandle.fileHandle
 	}

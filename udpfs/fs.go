@@ -1,6 +1,9 @@
 package udpfs
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 // FS is the filesystem abstraction used by the UDPFS protocol layer.
 // The protocol parses packets and builds replies; it calls FS only for operations and data.
@@ -10,8 +13,8 @@ type FS interface {
 	Open(path string, flag int, isDir bool) (handle int32, stat StatInfo, err error)
 	// Close closes a handle. Returns nil or error (mapped to errno by protocol).
 	Close(handle int32) error
-	// Read reads up to size bytes from handle. Returns bytes read (>=0), data slice, and optional error.
-	Read(handle int32, size uint32) (n int32, data []byte, err error)
+	// Read reads up to size bytes from handle into readBuffer. Returns bytes read (>=0), data slice, and optional error.
+	Read(handle int32, size uint32, readBuffer []byte) (n int32, data []byte, err error)
 	// WriteStart starts a multi-chunk write.
 	WriteStart(handle int32) error
 	// WriteChunk adds a chunk. Returns done=true when all chunks received; then protocol will call CompleteWrite.
@@ -30,8 +33,8 @@ type FS interface {
 	Remove(path string) error
 	// Rmdir removes a directory.
 	Rmdir(path string) error
-	// Bread reads sectors. Returns data (exactly sectorCount*sectorSize bytes or shorter on error).
-	Bread(handle int32, sectorNr int64, sectorCount uint16) (data []byte, err error)
+	// Bread reads sectors into readBuffer. Returns data (exactly sectorCount*sectorSize bytes or shorter on error).
+	Bread(handle int32, sectorNr int64, sectorCount uint16, readBuffer []byte) (data []byte, err error)
 	// BwriteStart starts a block write. Subsequent chunks are delivered via WriteChunk (same as regular write).
 	BwriteStart(handle int32, sectorNr int64, sectorCount uint16) error
 }
@@ -40,7 +43,7 @@ type FS interface {
 type Errno int32
 
 func (e Errno) Error() string {
-	return "udpfs errno"
+	return fmt.Sprintf("UDPFS errno %d", e)
 }
 
 const (

@@ -73,8 +73,21 @@ func (c *Connection) handleOpen(addr *net.UDPAddr, payload []byte) int {
 	}
 	path := string(payload[8 : 8+pathEnd])
 	isDir := len(payload) > 1 && payload[1] != 0
+	flag := udpfsFlagsToOSFlags(flags)
 
-	handle, stat, err := c.fs.Open(path, udpfsFlagsToOSFlags(flags), isDir)
+	if !isDir {
+		// Retrieve cached file handle if peer was reset and tries to open the same file again
+		if h, ok := c.lookupHandle(path, flag); ok {
+			if c.verbose {
+				log.Printf("[%s]: reusing file handle %d for %s (mode %x)", addr, h, path, flag)
+			}
+			c.SendOpenReply(addr, h, StatInfo{})
+			return 0
+		}
+	}
+
+	// Else, open the file
+	handle, stat, err := c.fs.Open(path, flag, isDir)
 	if err != nil {
 		errCode := -errToErrno(err)
 		c.SendOpenReply(addr, errCode, stat)
@@ -84,6 +97,9 @@ func (c *Connection) handleOpen(addr *net.UDPAddr, payload []byte) int {
 		c.SendOpenReply(addr, handle, stat)
 		return int(handle)
 	}
+
+	c.addHandle(handle, path, flag, isDir)
+
 	c.SendOpenReply(addr, handle, stat)
 	return 0
 }
@@ -105,6 +121,9 @@ func (c *Connection) handleClose(addr *net.UDPAddr, payload []byte) int {
 		c.SendCloseReply(addr, errCode)
 		return int(errCode)
 	}
+
+	c.removeHandle(handle)
+
 	c.SendCloseReply(addr, 0)
 	return 0
 }
@@ -118,7 +137,9 @@ func (c *Connection) handleRead(addr *net.UDPAddr, payload []byte) int {
 	handle := int32(binary.LittleEndian.Uint32(payload[4:8]))
 	size := binary.LittleEndian.Uint32(payload[8:12])
 
-	n, data, err := c.fs.Read(handle, size)
+	c.Lock()
+	defer c.Unlock()
+	n, data, err := c.fs.Read(handle, size, c.dataBuffer[:cap(c.dataBuffer)])
 	if err != nil {
 		errCode := -errToErrno(err)
 		c.SendReadResult(addr, errCode, nil)
@@ -353,7 +374,9 @@ func (c *Connection) handleBread(addr *net.UDPAddr, payload []byte) int {
 	sectorNrHi := binary.LittleEndian.Uint32(payload[12:16])
 	sectorNr := int64(sectorNrHi)<<32 | int64(sectorNrLo)
 
-	data, err := c.fs.Bread(handle, sectorNr, sectorCount)
+	c.Lock()
+	defer c.Unlock()
+	data, err := c.fs.Bread(handle, sectorNr, sectorCount, c.dataBuffer[:cap(c.dataBuffer)])
 	if err != nil {
 		errCode := -errToErrno(err)
 		c.SendReadResult(addr, errCode, nil)

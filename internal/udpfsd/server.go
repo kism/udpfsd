@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"runtime"
 	"strconv"
 	"sync"
@@ -27,7 +28,7 @@ type Server struct {
 	dataConn *net.UDPConn
 
 	// Known peers
-	cMap map[string]*peer
+	cMap map[netip.AddrPort]*peer
 
 	bindIP string
 	wg     sync.WaitGroup
@@ -96,7 +97,7 @@ func WithMetrics(loggingPeriod time.Duration) func(s *Server) {
 func New(opts ...ServerOptFunc) (*Server, error) {
 	s := &Server{
 		port:                 udprdma.UDPFSPort,
-		cMap:                 make(map[string]*peer),
+		cMap:                 make(map[netip.AddrPort]*peer),
 		logMetrics:           false,
 		metricsLoggingPeriod: metricsLoggingPeriod,
 	}
@@ -174,6 +175,7 @@ func (s *Server) cleanup() {
 		for pAddr, p := range s.cMap {
 			if time.Since(p.lastSeen) >= peerTimeout {
 				log.Printf("udpfsd: peer %s hasn't been seen for more than %s, removing", pAddr, peerTimeout)
+				p.Connection.Close()
 				p.Connection = nil
 				delete(s.cMap, pAddr)
 			}
@@ -191,7 +193,7 @@ Uptime: %s
 `, time.Now().Format(time.DateTime), time.Since(s.startTime).Round(time.Second))
 
 		for pAddr, p := range s.cMap {
-			s.printPeerStats(pAddr, p)
+			s.printPeerStats(pAddr.String(), p)
 		}
 		fmt.Println("=============================================================")
 		s.Unlock()

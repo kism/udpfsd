@@ -118,7 +118,7 @@ func (s *Backend) Close(handle int32) error {
 	return nil
 }
 
-func (s *Backend) Read(handle int32, size uint32) (n int32, data []byte, err error) {
+func (s *Backend) Read(handle int32, size uint32, readBuffer []byte) (int32, []byte, error) {
 	f := s.getFile(handle)
 	if f == nil {
 		return 0, nil, os.ErrInvalid
@@ -126,13 +126,12 @@ func (s *Backend) Read(handle int32, size uint32) (n int32, data []byte, err err
 	f.Lock()
 	defer f.Unlock()
 
-	buf := make([]byte, size)
-	read, err := f.Read(buf)
+	read, err := f.Read(readBuffer[:size])
 	if err != nil && err != os.ErrClosed && err != io.EOF {
 		log.Printf("fs: failed to read file %s: %v", f.Name(), err)
 		return 0, nil, err
 	}
-	return int32(read), buf[:read], nil
+	return int32(read), readBuffer[:read], nil
 }
 
 func (s *Backend) WriteStart(handle int32) error {
@@ -325,32 +324,31 @@ func (s *Backend) Rmdir(path string) error {
 	return os.Remove(resolved)
 }
 
-func (s *Backend) Bread(handle int32, sectorNr int64, sectorCount uint16) (data []byte, err error) {
+func (s *Backend) Bread(handle int32, sectorNr int64, sectorCount uint16, readBuffer []byte) ([]byte, error) {
 	f := s.getFile(handle)
-	f.Lock()
-	defer f.Unlock()
-
 	if f == nil {
 		return nil, os.ErrInvalid
 	}
+	f.Lock()
+	defer f.Unlock()
 
 	sectorSize := s.sectorSize
 	if handle != udpfs.BlockDeviceHandle {
 		sectorSize = 512
 	}
-	totalSize := int(sectorCount) * sectorSize
-	_, err = f.Seek(sectorNr*int64(sectorSize), io.SeekStart)
+
+	_, err := f.Seek(sectorNr*int64(sectorSize), io.SeekStart)
 	if err != nil {
 		return nil, err
 	}
-	data = make([]byte, totalSize)
-	n, err := f.Read(data)
+
+	n, err := f.Read(readBuffer[:int(sectorCount)*sectorSize])
 	if err != nil && err != io.EOF {
 		log.Printf("fs: failed to read %s: %v", f.Name(), err)
 		return nil, err
 	}
-	data = data[:n]
-	return data, nil
+	readBuffer = readBuffer[:n]
+	return readBuffer, nil
 }
 
 func (s *Backend) BwriteStart(handle int32, sectorNr int64, sectorCount uint16) error {

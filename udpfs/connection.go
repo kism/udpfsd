@@ -4,6 +4,9 @@ package udpfs
 
 import (
 	"net"
+	"os"
+	"strings"
+	"sync"
 
 	"github.com/pcm720/udpfsd/udprdma"
 )
@@ -14,16 +17,30 @@ type Connection struct {
 	fs   FS
 	sess *udprdma.Session
 	*metricCollector
-	verbose bool
+
+	usedHandles map[int32]cachedHandle
+
+	sync.Mutex
+	dataBuffer [128 * 1024]byte // 128 KB read buffer
+	verbose    bool
+}
+
+type cachedHandle struct {
+	path  string
+	flag  int
+	reset bool
+	isDir bool
 }
 
 // NewConnection returns a Connection that sends via the given session and dispatches requests to fs.
 func NewConnection(sess *udprdma.Session, fs FS, verbose bool, collectMetrics bool) *Connection {
 	c := &Connection{
-		sess:    sess,
-		fs:      fs,
-		verbose: verbose,
+		sess:        sess,
+		fs:          fs,
+		verbose:     verbose,
+		usedHandles: make(map[int32]cachedHandle, 32),
 	}
+	sess.SetResetCallback(c.ResetPeer)
 	if collectMetrics {
 		c.metricCollector = newMetricCollector()
 	}
@@ -89,4 +106,60 @@ func (c *Connection) SendCloseReply(addr *net.UDPAddr, result int32) {
 // SendResultReplyOnly sends an 8-byte RESULT_REPLY (mkdir/remove/rmdir).
 func (c *Connection) SendResultReplyOnly(addr *net.UDPAddr, result int32) {
 	c.sess.SendData(PackResultReply(result))
+}
+
+// Returns cached file handle if peer was reset and tries to open the same file again
+func (c *Connection) lookupHandle(path string, flag int) (int32, bool) {
+	c.Lock()
+	defer c.Unlock()
+	for fsHandle, h := range c.usedHandles {
+		if h.reset && h.path == path && h.flag == flag {
+			h.reset = false
+			c.usedHandles[fsHandle] = h
+			return fsHandle, true
+		}
+	}
+	return 0, false
+}
+
+// Adds handle to peer handle cache
+func (c *Connection) addHandle(handle int32, path string, flag int, isDir bool) {
+	c.Lock()
+	defer c.Unlock()
+	c.usedHandles[handle] = cachedHandle{
+		path:  strings.Clone(path),
+		flag:  flag,
+		reset: false,
+		isDir: isDir,
+	}
+}
+
+// Removes handle from cache
+func (c *Connection) removeHandle(handle int32) {
+	c.Lock()
+	defer c.Unlock()
+	delete(c.usedHandles, handle)
+}
+
+// Resets all peer handles
+func (c *Connection) ResetPeer() {
+	c.Lock()
+	defer c.Unlock()
+
+	for fsHandle, h := range c.usedHandles {
+		c.fs.Lseek(fsHandle, 0, os.SEEK_SET)
+		h.reset = true
+		c.usedHandles[fsHandle] = h
+	}
+}
+
+// Closes all peer handles
+func (c *Connection) Close() {
+	c.Lock()
+	defer c.Unlock()
+
+	for fsHandle := range c.usedHandles {
+		c.fs.Close(fsHandle)
+		delete(c.usedHandles, fsHandle)
+	}
 }

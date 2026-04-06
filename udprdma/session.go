@@ -18,7 +18,10 @@ type Session struct {
 	peerAddr     *net.UDPAddr
 
 	pendingSend *PendingSend
-	txBuffer    []txPacket
+	// Transmit ring buffer
+	txBuffer     [2048]txPacket
+	txWriteIndex int
+	txReadIndex  int
 
 	metricContainer
 	sync.Mutex
@@ -26,6 +29,8 @@ type Session struct {
 	txSeqNr       uint16
 	txSeqNrAcked  uint16
 	rxSeqExpected uint16
+
+	packetBuf [1500]byte
 }
 
 type txPacket struct {
@@ -46,6 +51,11 @@ func NewSession(peerAddr net.UDPAddr, writeTo func(addr *net.UDPAddr, data []byt
 		writeTo:      writeTo,
 		peerAddr:     &peerAddr,
 		creationTime: time.Now(),
+	}
+	for i := range s.txBuffer {
+		s.txBuffer[i] = txPacket{
+			data: make([]byte, 1500),
+		}
 	}
 
 	return s
@@ -94,7 +104,7 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 		prevSeq := (s.rxSeqExpected - 1) & 0xFFF
 		if hdr.SeqNr == prevSeq {
 			s.unexpectedSeqNrs++
-			s.SendACK(true)
+			s.sendACK(true)
 			log.Printf("[%s]: got previous packet %d (expected %d), acking", s.peerAddr, hdr.SeqNr, s.rxSeqExpected)
 			if s.pendingSend != nil {
 				// Retransmit from the last unacked packet
@@ -108,14 +118,14 @@ func (s *Session) ProcessDataPacket(data []byte) (payload []byte, err error) {
 		} else {
 			s.unexpectedSeqNrs++
 			log.Printf("[%s]: got unexpected sequence number %d (expected %d)", s.peerAddr, hdr.SeqNr, s.rxSeqExpected)
-			s.SendACK(false)
+			s.sendACK(false)
 			return nil, nil
 		}
 	}
 
 	// Update expected RX number and ACK the packet
 	s.rxSeqExpected = (hdr.SeqNr + 1) & 0xFFF
-	s.SendACK(true)
+	s.sendACK(true)
 
 	return payload[:payloadSize], nil
 }
@@ -126,19 +136,22 @@ func (s *Session) SendData(payload []byte) {
 	defer s.Unlock()
 
 	padded := (len(payload) + 3) & ^3
-	buf := make([]byte, padded)
-	copy(buf, payload)
-	seqAck := (s.rxSeqExpected - 1) & 0xFFF
-	hdr := Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack()
-	hdr = append(hdr, DataHeader{
-		SeqNrAck: seqAck, Flags: uint8(DataFlagACK | DataFlagFIN),
-		HdrWordCount: 0, DataByteCount: uint16(padded),
-	}.Pack()...)
-	packet := append(hdr, buf...)
-	s.writeTo(s.peerAddr, packet)
-	s.txSeqNr = (s.txSeqNr + 1) & 0xFFF
 
+	pkt := s.packetBuf[:padded+headerSize+dataHeaderSize]
+
+	Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack(pkt)
+	DataHeader{
+		SeqNrAck: (s.rxSeqExpected - 1) & 0xFFF, Flags: uint8(DataFlagACK | DataFlagFIN),
+		HdrWordCount: 0, DataByteCount: uint16(padded),
+	}.Pack(pkt[headerSize:])
+
+	copy(pkt[headerSize+dataHeaderSize:], payload)
+	clear(pkt[headerSize+dataHeaderSize+len(payload):])
+
+	s.writeTo(s.peerAddr, pkt)
+	s.txSeqNr = (s.txSeqNr + 1) & 0xFFF
 	s.packetsTx++
+
 }
 
 // SendRawDataWithHeader sends header + data with header on first packet; may set pending and return.
@@ -146,7 +159,8 @@ func (s *Session) SendRawDataWithHeader(header, data []byte) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.txBuffer = nil
+	s.txReadIndex = 0
+	s.txWriteIndex = 0
 	s.pendingSend = nil
 	maxChunk := optimalChunkSize(len(data))
 	firstDataMax := maxChunk
@@ -159,7 +173,11 @@ func (s *Session) SendRawDataWithHeader(header, data []byte) {
 	if firstChunkSize > len(data) {
 		firstChunkSize = len(data)
 	}
-	firstPayload := append(append([]byte(nil), header...), data[:firstChunkSize]...)
+
+	firstPayload := s.packetBuf[:firstChunkSize+len(header)]
+	copy(firstPayload, header)
+	copy(firstPayload[len(header):], data[:firstChunkSize])
+
 	fin := firstChunkSize >= len(data)
 	s.SendDataPacket(firstPayload, fin, len(header))
 	offset := firstChunkSize
@@ -176,4 +194,11 @@ func (s *Session) SendRawDataWithHeader(header, data []byte) {
 		s.SendDataPacket(data[offset:offset+chunkSize], fin, 0)
 		offset += chunkSize
 	}
+}
+
+// SendACK sends an ACK or NACK packet (no payload).
+func (s *Session) SendACK(ack bool) {
+	s.Lock()
+	defer s.Unlock()
+	s.sendACK(ack)
 }

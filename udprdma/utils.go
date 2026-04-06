@@ -1,6 +1,8 @@
 package udprdma
 
-import "math"
+import (
+	"math"
+)
 
 // ContinuePendingSend sends more chunks when flow control allows (call after OnAck).
 func (s *Session) ContinuePendingSend() {
@@ -28,24 +30,31 @@ func (s *Session) ContinuePendingSend() {
 func (s *Session) SendDataPacket(payload []byte, fin bool, hdrSize int) {
 	dataSize := len(payload) - hdrSize
 	padded := (dataSize + 3) & ^3
-	buf := make([]byte, len(payload[:hdrSize])+padded)
-	copy(buf, payload[:hdrSize])
-	copy(buf[hdrSize:], payload[hdrSize:])
-	for len(buf) < hdrSize+padded {
-		buf = append(buf, 0)
-	}
+
 	flags := uint8(DataFlagACK)
 	if fin {
 		flags |= uint8(DataFlagFIN)
 	}
-	seqAck := (s.rxSeqExpected - 1) & 0xFFF
-	pkt := Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack()
-	pkt = append(pkt, DataHeader{
-		SeqNrAck: seqAck, Flags: flags,
+
+	// Set len to required size and clear
+	pkt := s.txBuffer[s.txWriteIndex].data[:hdrSize+padded+headerSize+dataHeaderSize]
+
+	Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack(pkt)
+	DataHeader{
+		SeqNrAck: (s.rxSeqExpected - 1) & 0xFFF, Flags: flags,
 		HdrWordCount: uint8(hdrSize / 4), DataByteCount: uint16(padded),
-	}.Pack()...)
-	pkt = append(pkt, buf...)
-	s.txBuffer = append(s.txBuffer, txPacket{seq: s.txSeqNr, data: pkt})
+	}.Pack(pkt[headerSize:])
+	copy(pkt[headerSize+dataHeaderSize:], payload)
+	clear(pkt[headerSize+dataHeaderSize+len(payload):])
+
+	s.txBuffer[s.txWriteIndex].seq = s.txSeqNr
+	s.txBuffer[s.txWriteIndex].data = pkt
+	s.txWriteIndex = (s.txWriteIndex + 1) % len(s.txBuffer)
+
+	if s.txWriteIndex == s.txReadIndex {
+		panic("udprdma: ring buffer is full")
+	}
+
 	s.writeTo(s.peerAddr, pkt)
 	s.txSeqNr = (s.txSeqNr + 1) & 0xFFF
 
@@ -55,18 +64,43 @@ func (s *Session) SendDataPacket(payload []byte, fin bool, hdrSize int) {
 // OnAck updates send state from a received ACK and prunes txBuffer.
 func (s *Session) OnAck(seqNrAck uint16) {
 	s.txSeqNrAcked = seqNrAck
-	newBuf := s.txBuffer[:0]
-	for _, p := range s.txBuffer {
+
+	// Move read index forward, skipping all acked packets
+	for s.txReadIndex != s.txWriteIndex {
+		p := s.txBuffer[s.txReadIndex]
 		diff := (p.seq - seqNrAck - 1) & 0xFFF
-		if diff < 2048 {
-			newBuf = append(newBuf, p)
+		if diff >= 2048 {
+			// This packet and all subsequent ones are outside window, stop
+			break
 		}
+		// Packet can be discarded (slot will be reused)
+		s.txReadIndex = (s.txReadIndex + 1) % len(s.txBuffer)
 	}
-	s.txBuffer = newBuf
 }
 
-// SendACK sends an ACK or NACK packet (no payload).
-func (s *Session) SendACK(ack bool) {
+// RetransmitFrom retransmits buffered packets from fromSeq.
+func (s *Session) RetransmitFrom(fromSeq uint16) {
+	for i := s.txReadIndex; i != s.txWriteIndex; i = (i + 1) % len(s.txBuffer) {
+		p := s.txBuffer[i]
+		diff := (p.seq - fromSeq) & 0xFFF
+
+		// Check if this packet is in the retransmit window
+		if diff >= 2048 {
+			break // All remaining packets are outside window
+		}
+
+		// Only retransmit if seq >= fromSeq
+		if p.seq != (fromSeq-1)&0xFFF && diff < 2048 {
+			s.packetsTx++
+			s.retransmits++
+			s.writeTo(s.peerAddr, p.data)
+		}
+	}
+}
+
+// sendACK sends an ACK or NACK packet (no payload).
+// Internal version that does not lock
+func (s *Session) sendACK(ack bool) {
 	flags := uint8(0)
 	if ack {
 		flags = uint8(DataFlagACK)
@@ -75,10 +109,14 @@ func (s *Session) SendACK(ack bool) {
 	if !ack {
 		seqAck = s.rxSeqExpected
 	}
-	pkt := Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack()
-	pkt = append(pkt, DataHeader{
+
+	// Set len to required size and clear
+	pkt := s.packetBuf[:headerSize+dataHeaderSize]
+
+	Header{PacketType: PacketData, SeqNr: s.txSeqNr}.Pack(pkt)
+	DataHeader{
 		SeqNrAck: seqAck, Flags: flags, HdrWordCount: 0, DataByteCount: 0,
-	}.Pack()...)
+	}.Pack(pkt[headerSize:])
 	s.writeTo(s.peerAddr, pkt)
 
 	s.packetsTx++
@@ -87,23 +125,12 @@ func (s *Session) SendACK(ack bool) {
 	}
 }
 
-// RetransmitFrom retransmits buffered packets from fromSeq.
-func (s *Session) RetransmitFrom(fromSeq uint16) {
-	for _, p := range s.txBuffer {
-		diff := (p.seq - fromSeq) & 0xFFF
-		if diff < 2048 {
-			s.writeTo(s.peerAddr, p.data)
-		}
-		s.packetsTx++
-		s.retransmits++
-	}
-}
-
 // ResetSession resets session state (e.g. on peer reset, seq=0).
 func (s *Session) ResetSession() {
 	s.txSeqNr = 0
 	s.txSeqNrAcked = 0
-	s.txBuffer = nil
+	s.txReadIndex = 0
+	s.txWriteIndex = 0
 	s.pendingSend = nil
 	s.rxSeqExpected = 0
 	s.peerResets++

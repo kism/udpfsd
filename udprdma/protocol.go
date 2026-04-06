@@ -42,6 +42,13 @@ const (
 	DataFlagFIN DataFlags = 2
 )
 
+// Header sizes in bytes
+const (
+	headerSize     = 2 // UDPRDMA base header
+	discHeaderSize = 4 // Discovery packet header
+	dataHeaderSize = 4 // Data packet header
+)
+
 // Header is the 2-byte UDPRDMA base header
 type Header struct {
 	PacketType PacketType // 4 bits
@@ -60,12 +67,10 @@ func UnpackHeader(data []byte) (Header, error) {
 	}, nil
 }
 
-// Pack writes the header to a 2-byte slice
-func (h Header) Pack() []byte {
-	b := make([]byte, 2)
+// Pack writes the header (2 bytes) to given slice
+func (h Header) Pack(b []byte) {
 	val := uint16(h.PacketType&0xF) | (uint16(h.SeqNr&0xFFF) << 4)
 	binary.LittleEndian.PutUint16(b, val)
-	return b
 }
 
 // DiscHeader is the Discovery/Inform header (4 bytes)
@@ -85,12 +90,10 @@ func UnpackDiscHeader(data []byte) (DiscHeader, error) {
 	}, nil
 }
 
-// Pack writes the disc header (4 bytes)
-func (d DiscHeader) Pack() []byte {
-	b := make([]byte, 4)
+// Pack writes the discovery header (4 bytes) to given slice
+func (d DiscHeader) Pack(b []byte) {
 	binary.LittleEndian.PutUint16(b[0:2], d.ServiceID)
 	binary.LittleEndian.PutUint16(b[2:4], d.Reserved)
-	return b
 }
 
 // DataHeader is the DATA packet header (4 bytes)
@@ -115,15 +118,13 @@ func UnpackDataHeader(data []byte) (DataHeader, error) {
 	}, nil
 }
 
-// Pack writes the data header (4 bytes)
-func (d DataHeader) Pack() []byte {
-	b := make([]byte, 4)
+// Pack writes the data header (4 bytes) to given slice
+func (d DataHeader) Pack(b []byte) {
 	val := uint32(d.SeqNrAck&0xFFF) |
 		(uint32(d.Flags&0x3) << 12) |
 		(uint32(d.HdrWordCount&0xF) << 14) |
 		(uint32(d.DataByteCount&0x3FFF) << 18)
 	binary.LittleEndian.PutUint32(b, val)
-	return b
 }
 
 // Validates UDPRDMA DISCOVERY packet and returns INFORM reply for the server to respond with
@@ -142,7 +143,9 @@ func ProcessDiscoveryPacket(data []byte, expectedService ServiceType) (reply []b
 	if disc.ServiceID != uint16(expectedService) {
 		return nil, fmt.Errorf("wrong service ID 0x%04X (expected 0x%04X)", disc.ServiceID, expectedService)
 	}
-	reply = Header{PacketType: PacketInform, SeqNr: 1}.Pack()
-	reply = append(reply, DiscHeader{ServiceID: uint16(expectedService), Reserved: 0}.Pack()...)
+
+	reply = make([]byte, headerSize+discHeaderSize)
+	Header{PacketType: PacketInform, SeqNr: 1}.Pack(reply)
+	DiscHeader{ServiceID: uint16(expectedService), Reserved: 0}.Pack(reply[headerSize:])
 	return reply, nil
 }

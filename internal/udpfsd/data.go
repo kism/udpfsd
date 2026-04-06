@@ -33,7 +33,11 @@ func (s *Server) dataHandler() {
 		}
 		pkt := make([]byte, n)
 		copy(pkt, buf[:n])
-		go s.handleData(pkt, addr)
+		if s.singleThreaded {
+			s.handleData(buf[:n], addr)
+		} else {
+			go s.handleData(buf[:n], addr)
+		}
 	}
 }
 

@@ -81,6 +81,7 @@ COPY <<'EOF' /entrypoint.sh
 #!/bin/sh
 set -e
 if [ -n "$PS2_IP" ]; then
+    echo "Neutrino version: $(cat /data/neutrino/version.txt)"
     echo "Updating Neutrino config files with PS2 IP: $PS2_IP"
     grep -rl "ip=[0-9.]" /data/neutrino/config | while read -r f; do
         sed -i "s/ip=[0-9.]\+/ip=${PS2_IP}/g" "$f"
@@ -91,7 +92,7 @@ exec /usr/local/bin/udpfsd "$@"
 EOF
 RUN chmod +x /entrypoint.sh
 
-# EXPOSE 62966/udp
-# EXPOSE 62967/udp
+EXPOSE 62966/udp
+EXPOSE 62967/udp
 
 ENTRYPOINT ["/entrypoint.sh"]

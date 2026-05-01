@@ -1,13 +1,19 @@
 services:
   udpfsd:
     container_name: udpfsd
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: development
+        NEUTRINO_DL_URL: https://github.com/rickgaiser/neutrino/releases/download/latest/neutrino_v1.8.0-37-g3ea72bb.7z
+
     environment:
       BIND: "0.0.0.0:62967" # Make this predictable for your firewall rules. This will listen on UDP ports 62968,62967
       FSROOT: /data # We use the directory /data as the root of the filesystem served to the PS2.
       RO: "0" # Not read-only, so the PS2 can write files to the nhddl directory.
-      VERBOSE: "1" # Enable verbose logging for debugging purposes.
-      PS2_IP: "10.42.0.86" # IP address written into Neutrino config files at startup (ip=<value>).
+      VERBOSE: "0" # Enable verbose logging for debugging purposes.
+      PS2_IP: "10.42.0.86" # IP address written into Neutrino config files at startup
     volumes:
       - /path/to/games:/data/games:ro # We can make this folder RO since the PS2 only needs to read from it.
       - nhddl:/data/nhddl # Volume for the nhddl directory, rw

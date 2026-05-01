@@ -59,13 +59,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Later we can make this an argument, but right now we need this pre-release
+ARG NEUTRINO_DL_URL=https://github.com/rickgaiser/neutrino/releases/download/latest/neutrino_v1.8.0-37-g3ea72bb.7z
 RUN --mount=type=cache,target=/var/cache/downloads \
-    wget -q -nc -P /var/cache/downloads \
-        https://github.com/rickgaiser/neutrino/releases/download/latest/neutrino_v1.8.0-37-g3ea72bb.7z \
-    && cp /var/cache/downloads/neutrino_v1.8.0-37-g3ea72bb.7z /tmp/neutrino.7z
+    wget -q -nc -P /var/cache/downloads ${NEUTRINO_DL_URL} \
+    && cp /var/cache/downloads/$(basename ${NEUTRINO_DL_URL}) /tmp/neutrino.7z
 
 WORKDIR /tmp/neutrino
 RUN 7z x /tmp/neutrino.7z
+# Don't need this from the neutrino release files
 RUN rm -rf /tmp/neutrino/udpfs_server
 
 # Stage 4: Runtime image
@@ -92,6 +93,7 @@ exec /usr/local/bin/udpfsd "$@"
 EOF
 RUN chmod +x /entrypoint.sh
 
+# Seems like this needs to be run with host networking, but leaving this in for now...
 EXPOSE 62966/udp
 EXPOSE 62967/udp
 

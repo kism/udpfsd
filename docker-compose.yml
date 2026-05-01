@@ -1,0 +1,19 @@
+services:
+  udpfsd:
+    container_name: udpfsd
+    build: .
+    ports:
+      - "62966:62966/udp"
+      - "37040:37040/udp"
+    environment:
+      FSROOT: /data # We use the directory /data as the root of the filesystem served to the PS2.
+      RO: "0" # Not read-only, so the PS2 can write files to the nhddl directory.
+    volumes:
+      - /path/to/your/games:/data/games:ro # We can make this folder RO since the PS2 only needs to read from it.
+      - nhddl:/data/nhddl # Volume for the nhddl directory, rw
+    restart: unless-stopped
+    # TODO: Test if required...
+    # network_mode: host
+
+volumes:
+  nhddl:

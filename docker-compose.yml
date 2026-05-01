@@ -6,8 +6,6 @@ services:
       dockerfile: Dockerfile
       args:
         VERSION: development
-        NEUTRINO_DL_URL: https://github.com/rickgaiser/neutrino/releases/download/latest/neutrino_v1.8.0-37-g3ea72bb.7z
-
     environment:
       BIND: "0.0.0.0:62967" # Make this predictable for your firewall rules. This will listen on UDP ports 62968,62967
       FSROOT: /data # We use the directory /data as the root of the filesystem served to the PS2.
